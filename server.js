@@ -155,10 +155,14 @@ function getGoogleAuth() {
     const { client_id, client_secret } = creds.installed || creds.web || creds;
     const auth = new google.auth.OAuth2(client_id, client_secret, 'http://localhost:3001/auth/callback');
     auth.setCredentials(token);
-    // トークン更新時に保存
+    // トークン更新時に保存（ローカルのみ。クラウドはenv var経由なのでスキップ）
     auth.on('tokens', (tokens) => {
-      const current = JSON.parse(fs.readFileSync(GOOGLE_TOKEN_PATH));
-      fs.writeFileSync(GOOGLE_TOKEN_PATH, JSON.stringify({ ...current, ...tokens }));
+      try {
+        if (fs.existsSync(GOOGLE_TOKEN_PATH)) {
+          const current = JSON.parse(fs.readFileSync(GOOGLE_TOKEN_PATH));
+          fs.writeFileSync(GOOGLE_TOKEN_PATH, JSON.stringify({ ...current, ...tokens }));
+        }
+      } catch (_) {}
     });
     return auth;
   } catch (e) {
@@ -603,10 +607,26 @@ function saveMemberUpdates(data) {
 }
 
 // ── API: メンバー用ボードデータ取得 ─────────────────
-app.get('/api/board-data', (req, res) => {
+app.get('/api/board-data', async (req, res) => {
   try {
-    const cache = JSON.parse(fs.readFileSync(new URL('cache.json', import.meta.url).pathname));
-    const updates = loadMemberUpdates();
+    let cache;
+    // ローカルキャッシュが空の場合はDriveから取得
+    try {
+      cache = JSON.parse(fs.readFileSync(CACHE_LOCAL_PATH));
+      if (!cache?.depts?.length) throw new Error('empty');
+    } catch {
+      console.log('Local cache empty, loading from Drive...');
+      cache = await loadCacheFromDrive();
+    }
+    if (!cache?.depts?.length) return res.json({ ok: false, depts: [] });
+
+    // メンバー更新も同様にDriveから復元
+    let updates = loadMemberUpdates();
+    if (!Object.keys(updates).length) {
+      const driveUpdates = await loadMemberUpdatesFromDrive();
+      if (driveUpdates) updates = driveUpdates;
+    }
+
     // キャッシュにメンバー更新をマージ
     const depts = (cache.depts || []).map(d => {
       const u = updates[d.id] || {};
@@ -951,10 +971,16 @@ cron.schedule('0 0 * * 1', () => { runWeeklySync(); }, { timezone: 'Asia/Tokyo' 
 
 // ── サーバー起動 ────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
-  console.log(`\n🚀 i-GIP Dashboard running at http://localhost:${PORT}`);
-  console.log(`   管理者画面: /   メンバー画面: /board`);
-  console.log(`   Anthropic API: ${ANTHROPIC_API_KEY ? '✅ 設定済み' : '⚠️  未設定'}\n`);
-  // 起動時にDriveからキャッシュ復元
-  await restoreFromDrive();
+// Drive復元を先に行ってからサーバーを起動
+restoreFromDrive().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n🚀 i-GIP Dashboard running at http://localhost:${PORT}`);
+    console.log(`   管理者画面: /   メンバー画面: /board`);
+    console.log(`   Anthropic API: ${ANTHROPIC_API_KEY ? '✅ 設定済み' : '⚠️  未設定'}\n`);
+  });
+}).catch(() => {
+  // Drive復元が失敗してもサーバーは起動する
+  app.listen(PORT, () => {
+    console.log(`\n🚀 i-GIP Dashboard running (Drive restore failed) at http://localhost:${PORT}`);
+  });
 });
