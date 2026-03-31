@@ -504,8 +504,11 @@ app.get('/api/board-data', (req, res) => {
         status: u.status || d.status,
         done: d.done || [],
         todo: d.todo || [],
-        checkedTodos: u.checkedTodos || [],  // 完了済みtodoインデックス
-        memberNote: u.memberNote || '',       // メンバー追記メモ
+        blockers: d.blockers || [],
+        insight: d.insight || '',
+        ideas: d.ideas || [],
+        checkedTodos: u.checkedTodos || [],
+        memberNote: u.memberNote || '',
         updatedBy: u.updatedBy || null,
         updatedAt: u.updatedAt || null,
       };
@@ -611,6 +614,18 @@ function memberBoardHtml() {
     .done-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:13px;color:var(--muted);}
     .done-icon{color:var(--green);flex-shrink:0;margin-top:2px;}
 
+    /* ブロッカー */
+    .blocker-item{background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.18);
+      border-radius:9px;padding:9px 12px;font-size:13px;color:var(--red);margin-bottom:6px;}
+
+    /* アイデア */
+    .insight-box{background:linear-gradient(135deg,rgba(79,142,247,.07),rgba(167,139,250,.07));
+      border:1px solid rgba(79,142,247,.16);border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+    .insight-text{font-size:13px;line-height:1.7;color:var(--text);margin-bottom:10px;}
+    .idea-item{display:flex;gap:8px;font-size:12px;color:var(--muted);padding:5px 0;
+      border-top:1px solid var(--border);}
+    .idea-arrow{color:var(--accent2);flex-shrink:0;}
+
     /* メモ欄 */
     .note-wrap{margin-top:4px;}
     textarea{width:100%;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);
@@ -712,6 +727,21 @@ function renderDept(d) {
     <div class="section">
       <div class="section-title">✅ 完了済み</div>
       \${doneItems}
+    </div>\` : ''}
+    \${d.blockers && d.blockers.length ? \`
+    <div class="section">
+      <div class="section-title">⚠ ブロッカー・懸念事項</div>
+      \${d.blockers.map(b => \`<div class="blocker-item">\${escHtml(b)}</div>\`).join('')}
+    </div>\` : ''}
+    \${d.insight || (d.ideas && d.ideas.length) ? \`
+    <div class="section">
+      <div class="section-title">💡 次に面白そうなこと</div>
+      <div class="insight-box">
+        \${d.insight ? \`<div class="insight-text">\${escHtml(d.insight)}</div>\` : ''}
+        \${(d.ideas||[]).map(i => \`
+          <div class="idea-item"><span class="idea-arrow">→</span><span>\${escHtml(i)}</span></div>
+        \`).join('')}
+      </div>
     </div>\` : ''}
     <div class="section">
       <div class="section-title">📝 進捗メモ・更新</div>
