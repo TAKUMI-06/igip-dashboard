@@ -439,15 +439,127 @@ app.get('/api/sync', async (req, res) => {
 
   console.log('✅ Sync complete');
   const payload = { ok: true, updatedAt: new Date().toISOString(), depts: results };
-  // キャッシュ保存
-  fs.writeFileSync(new URL('cache.json', import.meta.url).pathname, JSON.stringify(payload));
+  fs.writeFileSync(CACHE_LOCAL_PATH, JSON.stringify(payload));
+  saveCacheToDrive(payload); // 非同期でDriveにバックアップ
   res.json(payload);
 });
+
+// ── Drive: キャッシュ保存・読み込み ─────────────────
+const CACHE_DRIVE_FILENAME = 'igip-dashboard-cache.json';
+const CACHE_LOCAL_PATH = new URL('cache.json', import.meta.url).pathname;
+const MEMBER_UPDATES_DRIVE_FILENAME = 'igip-dashboard-member-updates.json';
+
+async function saveCacheToDrive(payload) {
+  try {
+    const drive = getDriveClient();
+    if (!drive) return;
+    const content = JSON.stringify(payload);
+    // 既存ファイルを検索
+    const list = await drive.files.list({
+      q: `name='${CACHE_DRIVE_FILENAME}' and trashed=false`,
+      fields: 'files(id)',
+    });
+    if (list.data.files?.length) {
+      await drive.files.update({
+        fileId: list.data.files[0].id,
+        media: { mimeType: 'application/json', body: content },
+      });
+    } else {
+      await drive.files.create({
+        requestBody: { name: CACHE_DRIVE_FILENAME, mimeType: 'application/json' },
+        media: { mimeType: 'application/json', body: content },
+      });
+    }
+    console.log('💾 Cache saved to Drive');
+  } catch (e) {
+    console.warn('Drive cache save failed:', e.message);
+  }
+}
+
+async function loadCacheFromDrive() {
+  try {
+    const drive = getDriveClient();
+    if (!drive) return null;
+    const list = await drive.files.list({
+      q: `name='${CACHE_DRIVE_FILENAME}' and trashed=false`,
+      fields: 'files(id)',
+    });
+    if (!list.data.files?.length) return null;
+    const res = await drive.files.get(
+      { fileId: list.data.files[0].id, alt: 'media' },
+      { responseType: 'text' }
+    );
+    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+    // ローカルにも保存
+    fs.writeFileSync(CACHE_LOCAL_PATH, JSON.stringify(data));
+    console.log('📥 Cache loaded from Drive');
+    return data;
+  } catch (e) {
+    console.warn('Drive cache load failed:', e.message);
+    return null;
+  }
+}
+
+async function saveMemberUpdatesToDrive(data) {
+  try {
+    const drive = getDriveClient();
+    if (!drive) return;
+    const content = JSON.stringify(data);
+    const list = await drive.files.list({
+      q: `name='${MEMBER_UPDATES_DRIVE_FILENAME}' and trashed=false`,
+      fields: 'files(id)',
+    });
+    if (list.data.files?.length) {
+      await drive.files.update({
+        fileId: list.data.files[0].id,
+        media: { mimeType: 'application/json', body: content },
+      });
+    } else {
+      await drive.files.create({
+        requestBody: { name: MEMBER_UPDATES_DRIVE_FILENAME, mimeType: 'application/json' },
+        media: { mimeType: 'application/json', body: content },
+      });
+    }
+  } catch (e) {
+    console.warn('Drive member-updates save failed:', e.message);
+  }
+}
+
+async function loadMemberUpdatesFromDrive() {
+  try {
+    const drive = getDriveClient();
+    if (!drive) return null;
+    const list = await drive.files.list({
+      q: `name='${MEMBER_UPDATES_DRIVE_FILENAME}' and trashed=false`,
+      fields: 'files(id)',
+    });
+    if (!list.data.files?.length) return null;
+    const res = await drive.files.get(
+      { fileId: list.data.files[0].id, alt: 'media' },
+      { responseType: 'text' }
+    );
+    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+    fs.writeFileSync(MEMBER_UPDATES_PATH, JSON.stringify(data));
+    console.log('📥 Member updates loaded from Drive');
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ── サーバー起動時にDriveからキャッシュ復元 ──────────
+async function restoreFromDrive() {
+  console.log('🔄 Restoring cache from Drive...');
+  await Promise.all([
+    loadCacheFromDrive(),
+    loadMemberUpdatesFromDrive(),
+  ]);
+}
 
 // ── API: キャッシュ取得（即時表示用） ───────────────
 app.get('/api/cache', (req, res) => {
   try {
-    const cache = JSON.parse(fs.readFileSync(new URL('cache.json', import.meta.url).pathname));
+    const cache = JSON.parse(fs.readFileSync(CACHE_LOCAL_PATH));
     res.json(cache);
   } catch {
     res.json({ ok: false, depts: [] });
@@ -532,6 +644,7 @@ app.post('/api/member-update', (req, res) => {
     updatedAt: new Date().toISOString(),
   };
   saveMemberUpdates(updates);
+  saveMemberUpdatesToDrive(updates); // 非同期でDriveにバックアップ
   res.json({ ok: true });
 });
 
@@ -838,8 +951,10 @@ cron.schedule('0 0 * * 1', () => { runWeeklySync(); }, { timezone: 'Asia/Tokyo' 
 
 // ── サーバー起動 ────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\n🚀 i-GIP Dashboard running at http://localhost:${PORT}`);
   console.log(`   管理者画面: /   メンバー画面: /board`);
   console.log(`   Anthropic API: ${ANTHROPIC_API_KEY ? '✅ 設定済み' : '⚠️  未設定'}\n`);
+  // 起動時にDriveからキャッシュ復元
+  await restoreFromDrive();
 });
