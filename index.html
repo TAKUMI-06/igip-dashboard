@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>i-GIP Kanto 2026 — 進捗ダッシュボード</title>
+  <style>
+    :root {
+      --bg: #0d0f14;
+      --surface: #161a22;
+      --surface2: #1e2330;
+      --border: #252d3d;
+      --accent: #4f8ef7;
+      --accent2: #a78bfa;
+      --green: #34d399;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'Hiragino Sans', 'Yu Gothic', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-weight: 800; font-size: 12px;
+      padding: 4px 10px; border-radius: 7px; letter-spacing: .5px;
+    }
+    .logo-title { font-size: 14px; font-weight: 700; }
+    .logo-sub { font-size: 11px; color: var(--muted); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .updated { font-size: 11px; color: var(--muted); }
+    .sync-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff; border: none;
+      padding: 7px 16px; border-radius: 8px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: opacity .2s;
+    }
+    .sync-btn:hover { opacity: .85; }
+    .sync-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .sync-icon { display: inline-block; transition: transform .6s; }
+    .sync-btn.loading .sync-icon { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SUMMARY BAR ── */
+    .summary-bar {
+      display: flex;
+      gap: 0;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 28px;
+    }
+    .sum-item { display: flex; align-items: center; gap: 8px; margin-right: 28px; }
+    .sum-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .sum-label { font-size: 12px; color: var(--muted); }
+    .sum-count { font-size: 14px; font-weight: 800; }
+    .c-green { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-red { color: var(--red); }
+    .bg-green { background: var(--green); }
+    .bg-yellow { background: var(--yellow); }
+    .bg-red { background: var(--red); }
+
+    /* ── MAIN ── */
+    .main {
+      max-width: 860px;
+      margin: 28px auto;
+      padding: 0 20px 80px;
+    }
+
+    /* ── DEPT TREE ── */
+    .dept-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .dept-block:hover { border-color: #3a4560; }
+    .dept-block.open { border-color: var(--accent); }
+
+    /* Dept Header Row */
+    .dept-header {
+      display: flex;
+      align-items: center;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+      gap: 14px;
+    }
+    .dept-header:hover { background: rgba(255,255,255,.02); }
+
+    .chevron {
+      font-size: 10px;
+      color: var(--muted);
+      transition: transform .25s;
+      flex-shrink: 0;
+      width: 16px;
+    }
+    .dept-block.open .chevron { transform: rotate(90deg); }
+
+    .status-pill {
+      width: 10px; height: 10px;
+      border-radius: 50%; flex-shrink: 0;
+    }
+    .dept-name-wrap { flex: 1; }
+    .dept-name { font-size: 16px; font-weight: 700; }
+    .dept-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .dept-badges { display: flex; align-items: center; gap: 8px; }
+    .badge {
+      font-size: 11px; font-weight: 600;
+      padding: 3px 9px; border-radius: 99px;
+    }
+    .badge-green { background: rgba(52,211,153,.12); color: var(--green); }
+    .badge-yellow { background: rgba(251,191,36,.12); color: var(--yellow); }
+    .badge-red { background: rgba(248,113,113,.12); color: var(--red); }
+    .badge-count { background: var(--surface2); color: var(--muted); font-size: 11px; }
+
+    /* ── TREE BODY ── */
+    .dept-body {
+      display: none;
+      border-top: 1px solid var(--border);
+    }
+    .dept-block.open .dept-body { display: block; }
+
+    /* Tree Node */
+    .tree-section {
+      border-bottom: 1px solid var(--border);
+    }
+    .tree-section:last-child { border-bottom: none; }
+
+    .tree-section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 20px 12px 36px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      user-select: none;
+    }
+    .tree-section-header:hover { background: rgba(255,255,255,.02); color: var(--text); }
+    .tree-section.open .tree-section-header { color: var(--text); }
+
+    .tree-chevron {
+      font-size: 9px;
+      transition: transform .2s;
+      flex-shrink: 0;
+    }
+    .tree-section.open .tree-chevron { transform: rotate(90deg); }
+
+    .section-icon { font-size: 14px; }
+    .section-count {
+      margin-left: auto;
+      font-size: 10px;
+      background: var(--surface2);
+      color: var(--muted);
+      padding: 2px 7px;
+      border-radius: 99px;
+    }
+
+    .tree-items {
+      display: none;
+      padding: 4px 0 12px 52px;
+    }
+    .tree-section.open .tree-items { display: block; }
+
+    .tree-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 6px 20px 6px 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .tree-item-icon { font-size: 12px; flex-shrink: 0; margin-top: 2px; color: var(--muted); }
+    .tree-item.done .tree-item-icon { color: var(--green); }
+    .tree-item.blocker .tree-item-icon { color: var(--red); }
+    .tree-item.todo .tree-item-icon { color: var(--accent); }
+
+    /* ── INSIGHT ── */
+    .insight-box {
+      margin: 4px 20px 12px 52px;
+      background: linear-gradient(135deg, rgba(79,142,247,.07), rgba(167,139,250,.07));
+      border: 1px solid rgba(79,142,247,.18);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .insight-text { font-size: 13px; line-height: 1.7; color: var(--text); margin-bottom: 10px; }
+    .idea-list { display: flex; flex-direction: column; gap: 6px; }
+    .idea-item {
+      display: flex; gap: 8px;
+      font-size: 12px; color: var(--muted);
+    }
+    .idea-arrow { color: var(--accent2); flex-shrink: 0; }
+
+    /* ── REMIND ── */
+    .remind-box {
+      margin: 4px 20px 12px 52px;
+    }
+    .remind-msg {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.75;
+      white-space: pre-wrap;
+      font-family: inherit;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    .remind-footer { display: flex; gap: 8px; }
+    .send-btn {
+      flex: 1;
+      padding: 10px;
+      background: var(--accent);
+      color: #fff; border: none;
+      border-radius: 9px;
+      font-size: 12px; font-weight: 700;
+      cursor: pointer; transition: opacity .2s;
+    }
+    .send-btn:hover { opacity: .85; }
+    .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .edit-btn {
+      padding: 10px 16px;
+      background: var(--surface2);
+      color: var(--muted); border: 1px solid var(--border);
+      border-radius: 9px;
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: .2s;
+    }
+    .edit-btn:hover { color: var(--text); }
+
+    /* ── EMPTY / LOADING ── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 2;
+    }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+    .loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(13,15,20,.85);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 999;
+      gap: 16px;
+    }
+    .loading-spinner {
+      width: 44px; height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .loading-text { font-size: 14px; color: var(--muted); }
+    .loading-sub { font-size: 12px; color: var(--muted); opacity: .6; }
+
+    /* ── DRIVE FILE CHIP ── */
+    .drive-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 20px 12px 52px; }
+    .drive-chip {
+      display: flex; align-items: center; gap: 5px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px; color: var(--muted);
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+  </style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div class="loading-overlay" id="loadingOverlay" style="display:none">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Slack & Drive を解析中...</div>
+  <div class="loading-sub" id="loadingStep">チャンネル履歴を取得しています</div>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-badge">i-GIP</div>
+    <div>
+      <div class="logo-title">Kanto 2026 進捗ダッシュボード</div>
+      <div class="logo-sub">Slack & Drive 自動分析</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="updated" id="updatedAt">未取得</span>
+    <button class="sync-btn" id="syncBtn" onclick="syncAll()">
+      <span class="sync-icon">⟳</span> Slack / Drive 同期
+    </button>
+  </div>
+</header>
+
+<!-- SUMMARY -->
+<div class="summary-bar">
+  <div class="sum-item">
+    <div class="sum-dot bg-green"></div>
+    <span class="sum-count c-green" id="sumGreen">–</span>
+    <span class="sum-label">順調</span>
+  </div>
+  <div class="sum-item">
+    <div class="sum-dot bg-yellow"></div>
+    <span class="sum-count c-yellow" id="sumYellow">–</span>
+    <span class="sum-label">要確認</span>
+  </div>
+  <div class="sum-item">
+    <div class="sum-dot bg-red"></div>
+    <span class="sum-count c-red" id="sumRed">–</span>
+    <span class="sum-label">止まってる</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main" id="mainContent">
+  <div class="empty-state">
+    <div class="empty-icon">🔄</div>
+    「Slack / Drive 同期」を押して<br>各部署の進捗を自動取得してください
+  </div>
+</div>
+
+<script>
+let deptData = [];
+
+// ── 同期 ───────────────────────────────────────────
+async function syncAll() {
+  const btn = document.getElementById('syncBtn');
+  const overlay = document.getElementById('loadingOverlay');
+  const step = document.getElementById('loadingStep');
+
+  btn.disabled = true;
+  btn.classList.add('loading');
+  overlay.style.display = 'flex';
+
+  const steps = [
+    'Slackチャンネル履歴を取得中...',
+    'Google Driveを検索中...',
+    'Claude AIで進捗を分析中...',
+    'リマインドメッセージを生成中...',
+  ];
+  let si = 0;
+  const stepTimer = setInterval(() => {
+    step.textContent = steps[si++ % steps.length];
+  }, 3000);
+
+  try {
+    const res = await fetch('/api/sync');
+    const data = await res.json();
+    deptData = data.depts;
+    renderAll(data);
+    document.getElementById('updatedAt').textContent =
+      '最終更新: ' + new Date(data.updatedAt).toLocaleTimeString('ja');
+  } catch (e) {
+    alert('同期に失敗しました。サーバーが起動しているか確認してください。\n' + e.message);
+  } finally {
+    clearInterval(stepTimer);
+    overlay.style.display = 'none';
+    btn.disabled = false;
+    btn.classList.remove('loading');
+  }
+}
+
+// ── 描画 ───────────────────────────────────────────
+function renderAll(data) {
+  const counts = { green: 0, yellow: 0, red: 0 };
+  data.depts.forEach(d => counts[d.status]++);
+  document.getElementById('sumGreen').textContent = counts.green;
+  document.getElementById('sumYellow').textContent = counts.yellow;
+  document.getElementById('sumRed').textContent = counts.red;
+
+  const main = document.getElementById('mainContent');
+  main.innerHTML = data.depts.map(d => renderDept(d)).join('');
+}
+
+function renderDept(d) {
+  const statusLabel = { green: '順調', yellow: '要確認', red: '止まってる' }[d.status] || '–';
+  const badgeClass = `badge-${d.status}`;
+  const dotStyle = {
+    green: 'background:var(--green);box-shadow:0 0 7px var(--green)',
+    yellow: 'background:var(--yellow);box-shadow:0 0 7px var(--yellow)',
+    red: 'background:var(--red);box-shadow:0 0 7px var(--red)',
+  }[d.status] || '';
+
+  const totalTasks = (d.done?.length || 0) + (d.todo?.length || 0);
+  const slackInfo = d.slackCount ? `Slack ${d.slackCount}件` : '';
+
+  return `
+<div class="dept-block" id="dept-${d.id}">
+  <div class="dept-header" onclick="toggleDept('${d.id}')">
+    <span class="chevron">▶</span>
+    <div class="status-pill" style="${dotStyle}"></div>
+    <div class="dept-name-wrap">
+      <div class="dept-name">${d.name}</div>
+      <div class="dept-meta">${slackInfo}${d.driveFiles?.length ? ` · Drive ${d.driveFiles.length}件` : ''}</div>
+    </div>
+    <div class="dept-badges">
+      <span class="badge ${badgeClass}">${statusLabel}</span>
+      ${d.blockers?.length ? `<span class="badge badge-red">⚠ ${d.blockers.length}</span>` : ''}
+      <span class="badge badge-count">${totalTasks} タスク</span>
+    </div>
+  </div>
+
+  <div class="dept-body">
+
+    ${renderTreeSection(d.id, 'done', '✅', '完了したこと', d.done || [], 'done')}
+    ${renderTreeSection(d.id, 'todo', '→', '次にやること', d.todo || [], 'todo')}
+    ${d.blockers?.length ? renderTreeSection(d.id, 'blocker', '⚠', 'ブロッカー', d.blockers, 'blocker') : ''}
+    ${d.driveFiles?.length ? renderDriveSection(d.id, d.driveFiles) : ''}
+
+    <!-- アイデア -->
+    <div class="tree-section" id="section-${d.id}-idea">
+      <div class="tree-section-header" onclick="toggleSection('${d.id}', 'idea')">
+        <span class="tree-chevron">▶</span>
+        <span class="section-icon">💡</span>
+        <span>次に面白そうなこと</span>
+      </div>
+      <div class="tree-items">
+        <div class="insight-box">
+          <div class="insight-text">${escHtml(d.insight || '')}</div>
+          <div class="idea-list">
+            ${(d.ideas || []).map(i => `
+              <div class="idea-item">
+                <span class="idea-arrow">→</span>
+                <span>${escHtml(i)}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- リマインド -->
+    <div class="tree-section" id="section-${d.id}-remind">
+      <div class="tree-section-header" onclick="toggleSection('${d.id}', 'remind')">
+        <span class="tree-chevron">▶</span>
+        <span class="section-icon">📨</span>
+        <span>Slackリマインド</span>
+      </div>
+      <div class="tree-items">
+        <div class="remind-box">
+          <div class="remind-msg" id="remind-text-${d.id}">${escHtml(d.remind || '')}</div>
+          <div class="remind-footer">
+            <button class="send-btn" id="send-btn-${d.id}" onclick="sendRemind('${d.id}', '${d.channelId}')">
+              Slackに送信
+            </button>
+            <button class="edit-btn" onclick="editRemind('${d.id}')">編集</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>`;
+}
+
+function renderTreeSection(deptId, key, icon, label, items, type) {
+  return `
+<div class="tree-section" id="section-${deptId}-${key}">
+  <div class="tree-section-header" onclick="toggleSection('${deptId}', '${key}')">
+    <span class="tree-chevron">▶</span>
+    <span class="section-icon">${icon}</span>
+    <span>${label}</span>
+    <span class="section-count">${items.length}</span>
+  </div>
+  <div class="tree-items">
+    ${items.map(t => `
+      <div class="tree-item ${type}">
+        <span class="tree-item-icon">${icon}</span>
+        <span>${escHtml(t)}</span>
+      </div>`).join('')}
+  </div>
+</div>`;
+}
+
+function renderDriveSection(deptId, files) {
+  return `
+<div class="tree-section" id="section-${deptId}-drive">
+  <div class="tree-section-header" onclick="toggleSection('${deptId}', 'drive')">
+    <span class="tree-chevron">▶</span>
+    <span class="section-icon">📁</span>
+    <span>Driveファイル</span>
+    <span class="section-count">${files.length}</span>
+  </div>
+  <div class="tree-items">
+    <div class="drive-files" style="padding:0 0 0 0">
+      ${files.map(f => `<div class="drive-chip">📄 ${escHtml(f)}</div>`).join('')}
+    </div>
+  </div>
+</div>`;
+}
+
+// ── トグル ──────────────────────────────────────────
+function toggleDept(id) {
+  document.getElementById(`dept-${id}`).classList.toggle('open');
+}
+
+function toggleSection(deptId, key) {
+  document.getElementById(`section-${deptId}-${key}`).classList.toggle('open');
+}
+
+// ── リマインド送信 ──────────────────────────────────
+async function sendRemind(deptId, channelId) {
+  const msg = document.getElementById(`remind-text-${deptId}`).textContent;
+  const btn = document.getElementById(`send-btn-${deptId}`);
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  try {
+    const res = await fetch('/api/send-remind', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channelId, message: msg }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.textContent = '✅ 送信完了！';
+      setTimeout(() => { btn.textContent = 'Slackに送信'; btn.disabled = false; }, 3000);
+    } else {
+      btn.textContent = `❌ エラー: ${data.error}`;
+      btn.disabled = false;
+    }
+  } catch (e) {
+    btn.textContent = '❌ 失敗';
+    btn.disabled = false;
+  }
+}
+
+function editRemind(deptId) {
+  const el = document.getElementById(`remind-text-${deptId}`);
+  const current = el.textContent;
+  const edited = prompt('メッセージを編集:', current);
+  if (edited !== null) el.textContent = edited;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
